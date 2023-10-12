@@ -9,72 +9,87 @@ require '../vendor/autoload.php';
 class Scrape
 {
     private array $products = [];
+    private string $host;
 
-
+    public function __construct()
+    {
+        $this->host = "https://www.magpiehq.com/developer-challenge";
+    }
 
     public function run(): void
     {
-        // // Condition to stop the loop based on page content
-        // $pageHasData = true;
         $page = 1;
 
+        // filter selectors
+        $productSelector = '.product';
+
         while (true) {
-            $document = ScrapeHelper::fetchDocument('https://www.magpiehq.com/developer-challenge/smartphones/?page=' . $page);
-            $productResult = $document->filter('.product');
+            $document = ScrapeHelper::fetchDocument($this->host . '/smartphones/?page=' . $page);
+            $productResult = $document->filter($productSelector);
 
             if ($productResult->count() == 0) {
                 break;
             }
 
-            for ($i = 0; $i < $productResult->count(); $i++) {
-                $title =  $productResult->eq($i)->filter('.bg-white .text-blue-600 .product-name')->text();
-                $image =  $productResult->eq($i)->filter('img')->attr('src');
-                $capacity = $productResult->eq($i)->filter('.bg-white .text-blue-600 .product-capacity')->text();
-                $title = $productResult->eq($i)->filter('.bg-white .text-blue-600 .product-name');
-                $price = $productResult->eq($i)->filter('.bg-white div.my-8.block.text-center.text-lg')->count();
-                $ava = $productResult->eq($i)->filter('div:contains("Availability:")')->count() != 0 ?  $productResult->eq($i)->filter('div:contains("Availability:")')->text() : '';
-                $colors = $productResult->eq($i)->filter('.flex-wrap [data-colour]')->each(function (Crawler $node, $i) {
+            $productResult->each(function (Crawler $product) {
+                $titleSelector = '.bg-white .text-blue-600 .product-name';
+                $imageSelector = 'img';
+                $capacitySelector = '.bg-white .text-blue-600 .product-capacity';
+                $priceSelector = '.bg-white div.my-8.block.text-center.text-lg';
+                $availabilitySelector = '.bg-white  div.my-4.text-sm.block:contains("Availability:")';
+                $colorSelector = '.flex-wrap [data-colour]';
+                $shippingInfoSelector = '.bg-white div.my-4.text-sm.block.text-center:contains("Delivery from"), .bg-white div.my-4.text-sm.block.text-center:contains("Delivers"), .bg-white div.my-4.text-sm.block.text-center:contains("Order within"), .bg-white div.my-4.text-sm.block.text-center:contains("Free Delivery"), .bg-white div.my-4.text-sm.block.text-center:contains("Free shipping"), .bg-white div.my-4.text-sm.block.text-center:contains("Available"), .bg-white div.my-4.text-sm.block.text-center:contains("Unavailable"), .bg-white div.my-4.text-sm.block.text-center:contains("Delivery by")';
+
+
+                $title = $product->filter($titleSelector)->text();
+                $image = $product->filter($imageSelector)->attr('src');
+                $capacity = $product->filter($capacitySelector)->text();
+                $price = $product->filter($priceSelector)->text();
+                $ava = $product->filter($availabilitySelector)->count() != 0 ? $product->filter($availabilitySelector)->text() : '';
+
+                $colors = $product->filter($colorSelector)->each(function (Crawler $node, $i) {
                     return $node->attr('data-colour');
                 });
-                $shippingCrawlerInfo = $productResult->eq($i)->filter('div:contains("Deliver"), div:contains("free shipping")');
-                $deliveryInformation = [];
 
-                foreach ($shippingCrawlerInfo as $shipInfo) {
-                    $text = $shipInfo->textContent;
+                $shippingCrawlerInfo = $product->filter($shippingInfoSelector);
 
-                    // Check for 'Deliver' or 'free shipping'
-                    if (strpos($text, 'Deliver') !== false || strpos($text, 'free shipping') !== false) {
-
-                        // Find and extract date
-                        preg_match('/\b(?:\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4})\b/', $text, $matches);
-
-                        $deliveryInformation[] = [
-                            'text' => $text,
-                            'date' => isset($matches[0]) ? $matches[0] : null
-                        ];
-                    }
+                if ($shippingCrawlerInfo->count() != 0) {
+                    $shippingInfo = ScrapeHelper::extractDateAndText($shippingCrawlerInfo->text());
+                } else {
+                    $shippingInfo = ['date' => '', 'text' => ''];
                 }
 
+                $image = ScrapeHelper::imagePath($image, $this->host);
 
-                $products[] = (array(
-                    'title' => $title,
-                    'capacity' => $capacity,
-                    'price' => $price,
-                    'colours' => empty($colors) ? 0 : 1,
-                    'availibityText' => $ava,
-                    'isAvailable' => true,
-                    'shippingText' => '',
-                    'shippingDate' => '',
-                    'imageUrl' => $image,
-                ));
-            }
+                foreach ($colors as $color) {
+                    $productObj = new Product();
+
+                    $productObj->title = $title;
+                    $productObj->capacityMB = ScrapeHelper::getCapacityInMB($capacity);
+                    $productObj->price = $price;
+                    $productObj->colour = $color;
+                    $productObj->availabilityText = str_replace("Availability", "", ($ava));
+                    $productObj->isAvailable = strpos(strtolower($ava), 'in stock') !== false ? 'true' : 'false';
+                    $productObj->shippingText = $shippingInfo['text'];
+                    $productObj->shippingDate = $shippingInfo['date'];
+                    $productObj->imageUrl = $image;
+
+                    $this->products[] = $productObj;
+                }
+            });
 
             $page++;
         }
 
+        $jsonData = json_encode(ScrapeHelper::removeDuplicateProducts($this->products), JSON_PRETTY_PRINT);
 
+        if ($jsonData !== false) {
+            file_put_contents('output.json', $jsonData);
 
-        // file_put_contents('output.json', json_encode($this->products));
+            echo 'Data written to output.json';
+        } else {
+            echo 'Error encoding data to JSON';
+        }
     }
 }
 
