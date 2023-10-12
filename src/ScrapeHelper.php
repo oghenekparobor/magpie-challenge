@@ -2,6 +2,7 @@
 
 namespace App;
 
+use Exception;
 use GuzzleHttp\Client;
 use Symfony\Component\DomCrawler\Crawler;
 
@@ -9,13 +10,18 @@ class ScrapeHelper
 {
     const HOST = "https://www.magpiehq.com/developer-challenge";
 
-    public static function fetchDocument(string $url): Crawler
+    public static function fetchDocument(string $url): ?Crawler
     {
-        $client = new Client();
+        try {
+            $client = new Client();
 
-        $response = $client->get($url);
+            $response = $client->get($url);
 
-        return new Crawler($response->getBody()->getContents(), $url);
+            return new Crawler($response->getBody()->getContents(), $url);
+        } catch (Exception $e) {
+            error_log('Error fetching document: ' . $e->getMessage());
+            return null;
+        }
     }
 
     public static function extractDateAndText($inputString): array

@@ -25,6 +25,11 @@ class Scrape
 
         while (true) {
             $document = ScrapeHelper::fetchDocument(ScrapeHelper::HOST . '/smartphones/?page=' . $page);
+
+            if ($document == null) {
+                exit();
+            }
+
             $productResult = $document->filter($productSelector);
 
             if ($productResult->count() == 0) {
