@@ -7,6 +7,8 @@ use Symfony\Component\DomCrawler\Crawler;
 
 class ScrapeHelper
 {
+    const HOST = "https://www.magpiehq.com/developer-challenge";
+
     public static function fetchDocument(string $url): Crawler
     {
         $client = new Client();
@@ -58,8 +60,6 @@ class ScrapeHelper
 
     public static function removeDuplicateProducts($products)
     {
-        echo "Removing duplicate products if found";
-
         $uniqueProducts = [];
 
         foreach ($products as $product) {

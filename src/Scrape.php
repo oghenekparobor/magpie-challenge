@@ -2,18 +2,18 @@
 
 namespace App;
 
+use Exception;
 use Symfony\Component\DomCrawler\Crawler;
 
 require '../vendor/autoload.php';
 
 class Scrape
 {
-    private array $products = [];
-    private string $host;
+    private array $products;
 
     public function __construct()
     {
-        $this->host = "https://www.magpiehq.com/developer-challenge";
+        $this->products = [];
     }
 
     public function run(): void
@@ -24,7 +24,7 @@ class Scrape
         $productSelector = '.product';
 
         while (true) {
-            $document = ScrapeHelper::fetchDocument($this->host . '/smartphones/?page=' . $page);
+            $document = ScrapeHelper::fetchDocument(ScrapeHelper::HOST . '/smartphones/?page=' . $page);
             $productResult = $document->filter($productSelector);
 
             if ($productResult->count() == 0) {
@@ -45,7 +45,7 @@ class Scrape
                 $image = $product->filter($imageSelector)->attr('src');
                 $capacity = $product->filter($capacitySelector)->text();
                 $price = $product->filter($priceSelector)->text();
-                $ava = $product->filter($availabilitySelector)->count() != 0 ? $product->filter($availabilitySelector)->text() : '';
+                $availabilityText = $product->filter($availabilitySelector)->count() != 0 ? $product->filter($availabilitySelector)->text() : '';
 
                 $colors = $product->filter($colorSelector)->each(function (Crawler $node, $i) {
                     return $node->attr('data-colour');
@@ -59,7 +59,7 @@ class Scrape
                     $shippingInfo = ['date' => '', 'text' => ''];
                 }
 
-                $image = ScrapeHelper::imagePath($image, $this->host);
+                $image = ScrapeHelper::imagePath($image, ScrapeHelper::HOST);
 
                 foreach ($colors as $color) {
                     $productObj = new Product();
@@ -68,8 +68,8 @@ class Scrape
                     $productObj->capacityMB = ScrapeHelper::getCapacityInMB($capacity);
                     $productObj->price = $price;
                     $productObj->colour = $color;
-                    $productObj->availabilityText = str_replace("Availability", "", ($ava));
-                    $productObj->isAvailable = strpos(strtolower($ava), 'in stock') !== false ? 'true' : 'false';
+                    $productObj->availabilityText = str_replace("Availability", "", ($availabilityText));
+                    $productObj->isAvailable = strpos(strtolower($availabilityText), 'in stock') !== false ? 'true' : 'false';
                     $productObj->shippingText = $shippingInfo['text'];
                     $productObj->shippingDate = $shippingInfo['date'];
                     $productObj->imageUrl = $image;
@@ -81,14 +81,20 @@ class Scrape
             $page++;
         }
 
-        $jsonData = json_encode(ScrapeHelper::removeDuplicateProducts($this->products), JSON_PRETTY_PRINT);
 
-        if ($jsonData !== false) {
-            file_put_contents('output.json', $jsonData);
+        try {
+            $jsonData = json_encode(ScrapeHelper::removeDuplicateProducts($this->products), JSON_PRETTY_PRINT);
 
-            echo 'Data written to output.json';
-        } else {
-            echo 'Error encoding data to JSON';
+            if ($jsonData !== false) {
+                file_put_contents('output.json', $jsonData);
+
+                echo 'Data written to output.json';
+            } else {
+                throw new Exception('Error encoding data to JSON');
+            }
+        } catch (Exception $e) {
+            error_log('Error writing to file: ' . $e->getMessage());
+            echo 'Error writing to file: ' . $e->getMessage();
         }
     }
 }
